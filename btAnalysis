@@ -1,0 +1,199 @@
+#!/usr/bin/python
+#coding:utf-8
+import os
+import time
+import re
+import sys
+
+# get timestamp
+def get_timestamp(log):
+    pattern = re.compile(r'\d{1,2}-\d{1,2} \d{1,2}:\d{1,2}:\d{1,2}.\d{1,3}')
+    time = pattern.findall(log)
+    return time
+
+# get bt enable/disable option
+def get_bt_option(log):
+	p = re.match(r'.*BluetoothManagerService: enable\((.*?)\).*',log)
+	if not p is None and p.group(1)!= '':
+		return ("  ENABLE\t" + p.group(1))
+	p = re.match(r'.*BluetoothManagerService: disable\(\).*',log)
+	if not p is None :
+		return "  DISABLE"
+	return ''
+
+# get ble enable/disable option
+def get_ble_option(log):
+	p = re.match(r'.*  (.*?)  (.*?) D BluetoothAdapter: enableBLE\(\): Calling enable',log)
+	if not p is None :
+		return (" enableBLE()  " + p.group(1))
+	p = re.match(r'.*  (.*?)  (.*?) D BluetoothAdapter: disableBLE\(\): de-registering (.*?)$',log)
+	if not p is None :
+		return (" disableBLE()  " + p.group(1) + "  " + p.group(3))
+	return ''
+
+
+# get bluetooth state
+def get_bluetooth_state_change(log):
+    pattern = re.compile(r'MESSAGE_BLUETOOTH_STATE_CHANGE: ?(.+)')
+    state = pattern.search(log)   
+    if not state is None:
+        return state.group(1)
+    else:
+        return ''
+
+def get_bond_state_change(log):
+    p = re.match(r'.*BluetoothBondStateMachine: Bond State Change Intent:(.*?) (.*?)$',log)
+    if not p is None: 
+        return (p.group(1) + "\t" + p.group(2)) 
+    else:
+        return ''
+
+def get_a2dp_state(log):
+    p = re.match(r'.*A2dpStateMachine: Connection state (.*?): (.*?)$',log)
+    if not p is None: 
+        return (p.group(1) + "\tA2DP: " + p.group(2)) 
+    p = re.match(r'.*A2dpStateMachine: A2DP Playing state : device: (.*?) State:(.*?)$',log)
+    if not p is None: 
+        return (p.group(1) + "\tA2DP: " + p.group(2)) 	
+    else:
+        return ''
+	
+def get_hfp_state(log):
+    p = re.match(r'.*HeadsetStateMachine:.*state changed: (.*?): (.*?)$',log)
+    if not p is None: 
+        return (p.group(1) + "\tHFP:  " + p.group(2)) 
+    else:
+        return ''
+	
+def get_audio_path(log):
+    p = re.match(r'.*audio_hw_primary: select_devices: out_snd_device\((.*?)\) in_snd_device\((.*?)\)',log)
+    if not p is None: 
+        return ('Audio  out: ' + p.group(1) + '  in: ' + p.group(2)) 
+    else:
+        return ''	
+
+def get_phone_state(log):
+    p = re.match(r'.*Phone switching state: (.*?) -> (.*?)$',log)
+    if not p is None and not p.group(1) == p.group(2): 
+        return ('Phone: ' + p.group(1) + ' -> ' + p.group(2)) 
+    else:
+        return ''	
+
+#avrcp
+def keycode_play():
+    return "play"
+
+def keycode_pause():
+    return "pause"
+
+def keycode_stop():
+    return "stop"
+
+def keycode_next():
+    return "next"
+
+def keycode_previous():
+    return "previous"
+
+def keycode_rewind():
+    return "rewind"
+
+def keycode_play_pause():
+    return "play_pause"
+
+def keycode_fast_forward():
+    return "fast_forward"
+
+def keycode_volume_up():
+    return "volume_up"
+
+def keycode_volume_dowm():
+    return "volume_down"
+
+def keycode_event(arg):
+    switcher={
+        'KEYCODE_MEDIA_PLAY':keycode_play,
+        'KEYCODE_MEDIA_PAUSE':keycode_pause,
+        'KEYCODE_MEDIA_STOP':keycode_stop,
+        'KEYCODE_MEDIA_NEXT':keycode_next,
+        'KEYCODE_MEDIA_PREVIOUS':keycode_previous,
+        'KEYCODE_MEDIA_REWIND':keycode_rewind,
+        'KEYCODE_MEDIA_PLAY_PAUSE':keycode_play_pause,
+        'KEYCODE_MEDIA_FAST_FORWARD':keycode_fast_forward,
+        'KEYCODE_VOLUME_UP':keycode_volume_up,
+        'KEYCODE_VOLUME_DOWN':keycode_volume_dowm,
+        None:lambda:"no"
+    }
+    func=switcher.get(arg,lambda:"no")
+    return func()
+
+def avrcp(log):
+    pattern = re.compile(r'recordKeyDispatched: KeyEvent { action=(\w.+), keyCode=(\w.+), scanCode')
+    state = pattern.search(log)
+    if not state is None:
+        key = keycode_event(state.group(2))
+        ctl_state = '{:^12}{}{:117}{:^12}'.format(state.group(1),'\n',' ',key)
+        return ctl_state
+    else:
+        ctl_state = '{}'.format('')
+        return ctl_state
+
+#log process
+def process(log):
+    log_time = get_timestamp(log)
+    bt_option = get_bt_option(log)	
+    bt_state = get_bluetooth_state_change(log)
+    ble_option = get_ble_option(log)	
+    bd_state = get_bond_state_change(log)
+    ad_state = get_a2dp_state(log)
+    hf_state = get_hfp_state(log)
+    audio_path = get_audio_path(log)
+    phone_state = get_phone_state(log)
+    ctl_state = avrcp(log)
+    
+    if log_time != [] and ((bt_state != '') or (bd_state != '') or (ad_state != '') or (hf_state != '')\
+						   or (ctl_state != '') or (bt_option != '') or (ble_option != '') or (audio_path != '')\
+                           or (phone_state != '')):
+        out = log_time[0] + bt_option + ble_option + "\t\t" + bt_state + "\t" + bd_state + ad_state + hf_state + \
+              "\t" + audio_path + phone_state + ctl_state
+        print(out)
+        return out
+    
+
+def export(rf , wf):
+    line = rf.readline()
+    while line:
+        log = line.strip()
+        out = process(log)
+        if wf != -1 and not out is None :
+            wf.write(out+'\n')
+        line = rf.readline()
+    if wf != -1 :
+        wf.close()
+    rf.close()
+    
+def print_usage():
+    print('usage:')
+    print('read from adb logcat , input : btAnalysis')
+    print('read from logcat file ,input : btAnalysis logPath')
+
+    
+cmdlen = len(sys.argv)
+if cmdlen <= 2 :
+    #read from log file
+    if cmdlen == 2 :
+        logpath = sys.argv[1]
+        if not os.path.exists(logpath):
+            print "Could not find file %s" %(logpath) 
+            print_usage()
+        else:
+            rf = open(logpath)
+            wf = open(logpath+".bt",'a+')
+            export(rf , wf)
+    #read from adb logcat     
+    elif cmdlen == 1:
+        rf = os.popen("adb logcat",'r',1024)
+        wf = -1
+        export(rf , wf)
+else:
+    print_usage()
