@@ -175,23 +175,55 @@ def export(rf , wf):
         wf.close()
     rf.close()
 
+# rename logcat.txt to logcat.txt.00 for subsequent processing
+def rename_file(path):
+    try:
+        src_file = path + "/logcat.txt"
+        dst_file = path + "/logcat.txt.00"
+        os.rename(src_file,dst_file)
+    except:
+        src_file = ''   #do nothing
+        
+# Look for all logcat files and sort the files
+def search_files(path):
+    index = []
+    files_lists = os.listdir(path)
+    p = re.compile(r"logcat.txt.[0-9][0-9]$") 
+    for item in files_lists:
+        if p.match(item):
+            index.append(item)
+    index.sort(reverse = True)
+    return index
+    
 def print_usage():
     print('usage:')
     print('read from adb logcat , input : btAnalysis')
-    print('read from logcat file ,input : btAnalysis logPath')
+    print('read from logcat file or dir ,input : btAnalysis logPath')
 
 cmdlen = len(sys.argv)
 if cmdlen <= 2 :
-    #read from log file
+    #read from log file or files under path
     if cmdlen == 2 :
         logpath = sys.argv[1]
         if not os.path.exists(logpath):
             print "Could not find file %s" %(logpath)
             print_usage()
         else:
-            rf = open(logpath)
-            wf = open(logpath+".bt",'a+')
-            export(rf , wf)
+        	if os.path.isdir(logpath):
+				rename_file(logpath)
+				files = search_files(logpath)
+				if len(files) == 0:
+					print "Could not find any log file under %s" %(logpath)
+				else:
+					for target_file in files:
+						print "--------------%s-----------------" %target_file
+						rf = open(target_file)					  
+						wf = open(target_file + ".bt",'a+')		            
+						export(rf , wf)		            
+        	elif os.path.isfile(logpath):
+		        rf = open(logpath)
+		        wf = open(logpath+".bt",'a+')
+		        export(rf , wf)            
     #read from adb logcat
     elif cmdlen == 1:
         rf = os.popen("adb logcat",'r',1024)
